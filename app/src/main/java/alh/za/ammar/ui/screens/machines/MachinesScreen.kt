@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -215,8 +216,17 @@ private fun MainContent(viewModel: MachinesViewModel, modifier: Modifier = Modif
                         viewModel.reactivateMachine(machine)
                         scheduleFinalAlarm(context, machine)
                     },
-                    onStop = { viewModel.stopMachine(machine) },
-                    onResume = { viewModel.resumeMachine(machine) }
+                    onStop = { 
+                        viewModel.stopMachine(machine)
+                        cancelAlarm(context, machine)
+                    },
+                    onResume = { 
+                        viewModel.resumeMachine(machine)
+                        // Note: resumeMachine updates createdAt based on stoppedAt
+                        // We need to fetch the updated machine to schedule correctly,
+                        // or calculate it here. The VM handles state update.
+                        // When state updates, LaunchedEffect will re-run.
+                    }
                 )
             }
         }
@@ -294,64 +304,66 @@ private fun MachineItem(
     onStop: () -> Unit,
     onResume: () -> Unit
 ) {
+    val context = LocalContext.current
     val numberOfDrops = if (machine.productsPerDrop > 0) machine.totalProducts / machine.productsPerDrop else 0
     val timePerDrop = (machine.timePerDropInSeconds * 1000).toLong()
     val totalTime = numberOfDrops * timePerDrop
 
-    var timeRemaining by remember(machine) { mutableLongStateOf(totalTime) }
+    // Calculate current remaining time based on state
+    val initialRemaining = if (machine.isStopped && machine.stoppedAt != null) {
+        (totalTime - (machine.stoppedAt - machine.createdAt)).coerceAtLeast(0)
+    } else {
+        (totalTime - (System.currentTimeMillis() - machine.createdAt)).coerceAtLeast(0)
+    }
 
-    LaunchedEffect(key1 = machine) {
+    var timeRemaining by remember(machine.id, machine.createdAt, machine.isStopped) { 
+        mutableLongStateOf(initialRemaining) 
+    }
+
+    LaunchedEffect(key1 = machine.id, key2 = machine.createdAt, key3 = machine.isStopped) {
         if (!machine.isStopped) {
-            val elapsedTime = if (machine.stoppedAt != null) {
-                machine.stoppedAt - machine.createdAt
-            } else {
-                System.currentTimeMillis() - machine.createdAt
-            }
-            timeRemaining = (totalTime - elapsedTime).coerceAtLeast(0)
+            // Re-schedule alarm if we just resumed
+            scheduleFinalAlarm(context, machine)
+            
             while (timeRemaining > 0) {
                 delay(1000)
-                val newElapsedTime = if (machine.stoppedAt != null) {
-                    machine.stoppedAt - machine.createdAt
-                } else {
-                    System.currentTimeMillis() - machine.createdAt
-                }
-                timeRemaining = (totalTime - newElapsedTime).coerceAtLeast(0)
+                timeRemaining = (totalTime - (System.currentTimeMillis() - machine.createdAt)).coerceAtLeast(0)
             }
         }
     }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(machine.name, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Row {
                     Button(
                         onClick = onRemove,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        modifier = Modifier.padding(end = 4.dp)
                     ) {
-                        Text(stringResource(R.string.remove))
+                        Text(stringResource(R.string.remove), fontSize = 12.sp)
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
                     if (timeRemaining <= 0) {
                         Button(
                             onClick = onReactivate,
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Green)
                         ) {
-                            Text(stringResource(R.string.reactivate))
+                            Text(stringResource(R.string.reactivate), fontSize = 12.sp)
                         }
                     } else if (machine.isStopped) {
                         Button(
                             onClick = onResume,
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Green)
                         ) {
-                            Text(stringResource(R.string.resume))
+                            Text(stringResource(R.string.resume), fontSize = 12.sp)
                         }
                     } else {
                         Button(
                             onClick = onStop,
                             colors = ButtonDefaults.buttonColors(containerColor = Orange)
                         ) {
-                            Text(stringResource(R.string.stop))
+                            Text(stringResource(R.string.stop), fontSize = 12.sp)
                         }
                     }
                 }
@@ -394,7 +406,9 @@ private fun scheduleFinalAlarm(context: Context, machine: Machine) {
     val numberOfDrops = if (machine.productsPerDrop > 0) machine.totalProducts / machine.productsPerDrop else 0
     val timePerDrop = (machine.timePerDropInSeconds * 1000).toLong()
     val totalTime = numberOfDrops * timePerDrop
-    val triggerTime = System.currentTimeMillis() + totalTime
+    val triggerTime = machine.createdAt + totalTime
+
+    if (triggerTime <= System.currentTimeMillis()) return
 
     val intent = Intent(context, AlarmReceiver::class.java).apply {
         putExtra("machine_json", Gson().toJson(machine))
