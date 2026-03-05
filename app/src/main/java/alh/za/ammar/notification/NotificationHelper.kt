@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
+import android.media.AudioAttributes
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.net.toUri
@@ -17,11 +18,18 @@ fun createNotificationChannel(context: Context) {
         val descriptionText = "Alarms for machine product drops"
         val importance = NotificationManager.IMPORTANCE_HIGH
         val soundUri = "android.resource://${context.packageName}/${R.raw.alarm}".toUri()
+        
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ALARM)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+
         val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
             description = descriptionText
-            setSound(soundUri, null)
+            setSound(soundUri, audioAttributes)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             enableVibration(true)
+            enableLights(true)
         }
         val notificationManager: NotificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -39,7 +47,8 @@ fun showNotification(context: Context, title: String, message: String) {
         .setCategory(NotificationCompat.CATEGORY_ALARM)
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setSound(soundUri)
-        .setDefaults(Notification.DEFAULT_ALL)
+        .setAutoCancel(true)
+        .setOngoing(false)
 
     val notificationManager: NotificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager

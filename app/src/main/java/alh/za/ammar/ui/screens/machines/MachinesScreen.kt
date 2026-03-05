@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -222,10 +221,6 @@ private fun MainContent(viewModel: MachinesViewModel, modifier: Modifier = Modif
                     },
                     onResume = { 
                         viewModel.resumeMachine(machine)
-                        // Note: resumeMachine updates createdAt based on stoppedAt
-                        // We need to fetch the updated machine to schedule correctly,
-                        // or calculate it here. The VM handles state update.
-                        // When state updates, LaunchedEffect will re-run.
                     }
                 )
             }
@@ -309,7 +304,6 @@ private fun MachineItem(
     val timePerDrop = (machine.timePerDropInSeconds * 1000).toLong()
     val totalTime = numberOfDrops * timePerDrop
 
-    // Calculate current remaining time based on state
     val initialRemaining = if (machine.isStopped && machine.stoppedAt != null) {
         (totalTime - (machine.stoppedAt - machine.createdAt)).coerceAtLeast(0)
     } else {
@@ -322,7 +316,6 @@ private fun MachineItem(
 
     LaunchedEffect(key1 = machine.id, key2 = machine.createdAt, key3 = machine.isStopped) {
         if (!machine.isStopped) {
-            // Re-schedule alarm if we just resumed
             scheduleFinalAlarm(context, machine)
             
             while (timeRemaining > 0) {
@@ -421,7 +414,12 @@ private fun scheduleFinalAlarm(context: Context, machine: Machine) {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
-    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+        val alarmInfo = AlarmManager.AlarmClockInfo(triggerTime, pendingIntent)
+        alarmManager.setAlarmClock(alarmInfo, pendingIntent)
+    } else {
+        alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+    }
 }
 
 private fun cancelAlarm(context: Context, machine: Machine) {
