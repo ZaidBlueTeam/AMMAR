@@ -1,5 +1,6 @@
 package alh.za.ammar.notification
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -19,6 +20,8 @@ fun createNotificationChannel(context: Context) {
         val channel = NotificationChannel(CHANNEL_ID, name, importance).apply {
             description = descriptionText
             setSound(soundUri, null)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            enableVibration(true)
         }
         val notificationManager: NotificationManager =
             context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -33,7 +36,10 @@ fun showNotification(context: Context, title: String, message: String) {
         .setContentTitle(title)
         .setContentText(message)
         .setPriority(NotificationCompat.PRIORITY_HIGH)
+        .setCategory(NotificationCompat.CATEGORY_ALARM)
+        .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setSound(soundUri)
+        .setDefaults(Notification.DEFAULT_ALL)
 
     val notificationManager: NotificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
